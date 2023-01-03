@@ -1,5 +1,6 @@
 import gql
 from gql.transport.aiohttp import AIOHTTPTransport
+from typing import List
 
 _TRANSACTIONS_QUERY = gql.gql(
 """
@@ -77,6 +78,38 @@ query GetHouseholdTransactionTags($search: String, $limit: Int, $bulkParams: Bul
 """
 )
 
+_SET_TAGS_MUTATION = gql.gql(
+"""
+mutation SetTransactionTags($input: SetTransactionTagsInput!) {
+    setTransactionTags(input: $input) {
+        errors {
+            ...PayloadErrorFields
+            __typename
+        }
+        transaction {
+            id
+            tags {
+                id
+                __typename
+            }
+            __typename
+        }
+        __typename
+    }
+}
+fragment PayloadErrorFields on PayloadError {
+    fieldErrors {
+        field
+        messages
+        __typename
+    }
+    message
+    code
+    __typename
+}
+"""
+)
+
 class Client:
     def __init__(self, token):
         transport = AIOHTTPTransport(
@@ -86,6 +119,9 @@ class Client:
         self._client = gql.Client(transport=transport, fetch_schema_from_transport=False)
 
     def transactions(self):
+        """
+        Returns an iterable of all transactions.
+        """
         offset = 0
         while True:
             result = self._client.execute(
@@ -109,6 +145,20 @@ class Client:
             for result in results:
                 yield result
 
-    def tags(self):
-        result = self._client.execute(_TAGS_QUERY)
+    def tags(self, search = None):
+        """
+        Returns the tags and their IDs.
+        """
+        result = self._client.execute(_TAGS_QUERY, variable_values={"search": search})
         return result["householdTransactionTags"]
+
+    def set_tags(self, transaction_id: str, tag_ids: List[str]):
+        """
+        Sets the entire list of tags on the transaction. Overwrites any existing
+        tags. Pass empty list to clear all tags.
+        """
+        self._client.execute(_SET_TAGS_MUTATION,
+            variable_values={"input":{"transactionId": transaction_id,"tagIds": tag_ids}},
+        )
+
+
