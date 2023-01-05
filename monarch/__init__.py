@@ -2,6 +2,7 @@ import gql
 from gql.transport.aiohttp import AIOHTTPTransport
 from typing import List, Optional
 import requests
+import datetime
 
 _TRANSACTIONS_QUERY = gql.gql(
     """
@@ -141,10 +142,25 @@ class Client:
         resp = r.json()
         return cls(resp["token"])
 
-    def transactions(self):
+    def transactions(
+        self,
+        search: str = "",
+        start_date: Optional[datetime.date] = None,
+        end_date: Optional[datetime.date] = None,
+    ):
         """
         Returns an iterable of all transactions.
         """
+        filters = {
+            "search": search,
+            "categories": [],
+            "accounts": [],
+            "tags": [],
+        }
+        if start_date is not None:
+            filters["startDate"] = start_date.isoformat()
+        if end_date is not None:
+            filters["endDate"] = end_date.isoformat()
         offset = 0
         while True:
             result = self._client.execute(
@@ -152,12 +168,7 @@ class Client:
                 variable_values={
                     "limit": 100,
                     "orderBy": "date",
-                    "filters": {
-                        "search": "",
-                        "categories": [],
-                        "accounts": [],
-                        "tags": [],
-                    },
+                    "filters": filters,
                     "offset": offset,
                 },
             )
