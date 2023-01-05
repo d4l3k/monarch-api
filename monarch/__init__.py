@@ -1,9 +1,10 @@
 import gql
 from gql.transport.aiohttp import AIOHTTPTransport
-from typing import List
+from typing import List, Optional
+import requests
 
 _TRANSACTIONS_QUERY = gql.gql(
-"""
+    """
 query GetTransactionsList($offset: Int, $limit: Int, $filters: TransactionFilterInput, $orderBy: TransactionOrdering) {
     allTransactions(filters: $filters) {
         totalCount
@@ -64,7 +65,7 @@ fragment TransactionOverviewFields on Transaction {
 )
 
 _TAGS_QUERY = gql.gql(
-"""
+    """
 query GetHouseholdTransactionTags($search: String, $limit: Int, $bulkParams: BulkTransactionDataParams) {
     householdTransactionTags(search: $search, limit: $limit, bulkParams: $bulkParams) {
         id
@@ -79,7 +80,7 @@ query GetHouseholdTransactionTags($search: String, $limit: Int, $bulkParams: Bul
 )
 
 _SET_TAGS_MUTATION = gql.gql(
-"""
+    """
 mutation SetTransactionTags($input: SetTransactionTagsInput!) {
     setTransactionTags(input: $input) {
         errors {
@@ -110,13 +111,35 @@ fragment PayloadErrorFields on PayloadError {
 """
 )
 
+
 class Client:
-    def __init__(self, token):
+    def __init__(self, token: str) -> None:
+        self._token = token
         transport = AIOHTTPTransport(
             url="https://api.monarchmoney.com/graphql",
-            headers={'Authorization': f'Token {token}'}
+            headers={"Authorization": f"Token {token}"},
         )
-        self._client = gql.Client(transport=transport, fetch_schema_from_transport=False)
+        self._client = gql.Client(
+            transport=transport, fetch_schema_from_transport=False
+        )
+
+    @classmethod
+    def login(
+        cls, username: str, password: str, totp: Optional[str] = None
+    ) -> "Client":
+        body = {
+            "username": username,
+            "password": password,
+            "trusted_device": False,
+            "supports_mfa": True,
+        }
+        if totp is not None:
+            body["totp"] = totp
+        r = requests.post("https://api.monarchmoney.com/auth/login/", json=body)
+        r.raise_for_status()
+
+        resp = r.json()
+        return cls(resp["token"])
 
     def transactions(self):
         """
@@ -129,7 +152,7 @@ class Client:
                 variable_values={
                     "limit": 100,
                     "orderBy": "date",
-                    "filters":{
+                    "filters": {
                         "search": "",
                         "categories": [],
                         "accounts": [],
@@ -145,20 +168,32 @@ class Client:
             for result in results:
                 yield result
 
-    def tags(self, search = None):
+    def tags(self, search: Optional[str] = None):
         """
         Returns the tags and their IDs.
         """
         result = self._client.execute(_TAGS_QUERY, variable_values={"search": search})
         return result["householdTransactionTags"]
 
-    def set_tags(self, transaction_id: str, tag_ids: List[str]):
+    def set_tags(self, transaction_id: str, tag_ids: List[str]) -> None:
         """
         Sets the entire list of tags on the transaction. Overwrites any existing
         tags. Pass empty list to clear all tags.
         """
-        self._client.execute(_SET_TAGS_MUTATION,
-            variable_values={"input":{"transactionId": transaction_id,"tagIds": tag_ids}},
+        self._client.execute(
+            _SET_TAGS_MUTATION,
+            variable_values={
+                "input": {"transactionId": transaction_id, "tagIds": tag_ids}
+            },
         )
 
-
+    def extend_token(self) -> None:
+        """
+        Extends the token expiration. Tokens are normally very short lived ~15
+        minutes.
+        """
+        r = requests.post(
+            "https://api.monarchmoney.com/auth/extend-token/",
+            headers={"Authorization": f"Token {self.token}"},
+        )
+        r.raise_for_status()
