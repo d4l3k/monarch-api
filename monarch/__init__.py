@@ -142,7 +142,7 @@ class Client:
         resp = r.json()
         return cls(resp["token"])
 
-    def transactions(
+    async def transactions_async(
         self,
         search: str = "",
         start_date: Optional[datetime.date] = None,
@@ -163,7 +163,7 @@ class Client:
             filters["endDate"] = end_date.isoformat()
         offset = 0
         while True:
-            result = self._client.execute(
+            result = await self._client.execute_async(
                 _TRANSACTIONS_QUERY,
                 variable_values={
                     "limit": 100,
@@ -179,19 +179,19 @@ class Client:
             for result in results:
                 yield result
 
-    def tags(self, search: Optional[str] = None):
+    async def tags_async(self, search: Optional[str] = None):
         """
         Returns the tags and their IDs.
         """
-        result = self._client.execute(_TAGS_QUERY, variable_values={"search": search})
+        result = await self._client.execute_async(_TAGS_QUERY, variable_values={"search": search})
         return result["householdTransactionTags"]
 
-    def set_tags(self, transaction_id: str, tag_ids: List[str]) -> None:
+    async def set_tags_async(self, transaction_id: str, tag_ids: List[str]) -> None:
         """
         Sets the entire list of tags on the transaction. Overwrites any existing
         tags. Pass empty list to clear all tags.
         """
-        self._client.execute(
+        await self._client.execute_async(
             _SET_TAGS_MUTATION,
             variable_values={
                 "input": {"transactionId": transaction_id, "tagIds": tag_ids}
@@ -205,6 +205,6 @@ class Client:
         """
         r = requests.post(
             "https://api.monarchmoney.com/auth/extend-token/",
-            headers={"Authorization": f"Token {self.token}"},
+            headers={"Authorization": f"Token {self._token}"},
         )
         r.raise_for_status()
