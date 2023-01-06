@@ -112,6 +112,52 @@ fragment PayloadErrorFields on PayloadError {
 """
 )
 
+_UPDATE_TRANSACTION_MUTATION = gql.gql(
+    """
+mutation TransactionDrawerUpdateTransaction($input: UpdateTransactionMutationInput!) {
+    updateTransaction(input: $input) {
+        transaction {
+        id
+        amount
+        pending
+        date
+        hideFromReports
+        needsReview
+        reviewedAt
+        plaidName
+        notes
+        isRecurring
+        category {
+            id
+            __typename
+        }
+        merchant {
+            id
+            name
+            __typename
+        }
+        __typename
+    }
+    errors {
+        ...PayloadErrorFields
+        __typename
+    }
+    __typename
+    }
+}
+fragment PayloadErrorFields on PayloadError {
+    fieldErrors {
+        field
+        messages
+        __typename
+    }
+    message
+    code
+    __typename
+}
+"""
+)
+
 
 class Client:
     def __init__(self, token: str) -> None:
@@ -183,7 +229,9 @@ class Client:
         """
         Returns the tags and their IDs.
         """
-        result = await self._client.execute_async(_TAGS_QUERY, variable_values={"search": search})
+        result = await self._client.execute_async(
+            _TAGS_QUERY, variable_values={"search": search}
+        )
         return result["householdTransactionTags"]
 
     async def set_tags_async(self, transaction_id: str, tag_ids: List[str]) -> None:
@@ -208,3 +256,11 @@ class Client:
             headers={"Authorization": f"Token {self._token}"},
         )
         r.raise_for_status()
+
+    async def hide_transaction(self, id: str, value=True):
+        return await self._update_transaction({"id": id, "hideFromReports": value})
+
+    async def _update_transaction(self, values):
+        return await self._client.execute_async(
+            _UPDATE_TRANSACTION_MUTATION, variable_values={"input": values}
+        )
